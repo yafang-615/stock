@@ -1,19 +1,807 @@
-<!doctype html>
-<html>
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width" />
-		<title>My static Space</title>
-		<link rel="stylesheet" href="style.css" />
-	</head>
-	<body>
-		<div class="card">
-			<h1>Welcome to your static Space!</h1>
-			<p>You can modify this app directly by editing <i>index.html</i> in the Files and versions tab.</p>
-			<p>
-				Also don't forget to check the
-				<a href="https://huggingface.co/docs/hub/spaces" target="_blank">Spaces documentation</a>.
-			</p>
-		</div>
-	</body>
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動式股票技術分析儀表板（真實台股版）</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 ApexCharts 用於繪製互動式 K 線圖、成交量與 RSI 指標 -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <!-- 載入 Google Fonts (Inter 與 Noto Sans TC) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #0f172a; /* 深色專業看盤背景 Slate 900 */
+            color: #f8fafc;
+        }
+        /* 自訂捲軸樣式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- 頂部導覽列與控制區 -->
+    <header class="bg-slate-800/90 backdrop-blur-md border-b border-slate-700 sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <!-- 標題與 Logo -->
+            <div class="flex items-center gap-3">
+                <div class="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-500/30">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white">互動式股票技術分析儀表板</h1>
+                    <p class="text-xs text-slate-400">即時抓取真實台股歷史行情與 MA / RSI 技術指標分析</p>
+                </div>
+            </div>
+
+            <!-- 股票選擇與參數控制 -->
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                <!-- 預設股票下拉選單 -->
+                <select id="stockSelector" class="bg-slate-900 border border-slate-600 text-white text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 transition cursor-pointer">
+                    <option value="2330" selected>2330 台積電</option>
+                    <option value="2454">2454 聯發科</option>
+                    <option value="2317">2317 鴻海</option>
+                    <option value="0050">0050 元大台灣50</option>
+                    <option value="2881">2881 富邦金</option>
+                    <option value="CUSTOM">自訂台股代號...</option>
+                </select>
+
+                <!-- 自訂代號輸入框 (預設隱藏) -->
+                <input type="text" id="customTickerInput" placeholder="輸入代號如 2603" maxlength="10"
+                       class="hidden w-36 bg-slate-900 border border-indigo-500 text-white text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 p-2.5 transition">
+
+                <!-- 觀察天數 -->
+                <select id="daysSelector" class="bg-slate-900 border border-slate-600 text-white text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 transition cursor-pointer">
+                    <option value="60">近 60 個交易日</option>
+                    <option value="120" selected>近 120 個交易日</option>
+                    <option value="250">近 1 年 (250日)</option>
+                </select>
+
+                <!-- 自動更新開關與倒數計時 -->
+                <div class="flex items-center gap-2 bg-slate-900 border border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-300">
+                    <label class="inline-flex items-center cursor-pointer gap-2">
+                        <input type="checkbox" id="autoRefreshToggle" class="sr-only peer">
+                        <div class="relative w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                        <span>自動更新</span>
+                    </label>
+                    <span id="countdownText" class="text-slate-500 font-mono w-10 text-right">關閉</span>
+                </div>
+
+                <!-- 手動抓取按鈕 -->
+                <button id="refreshBtn" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium rounded-xl text-sm px-4 py-2.5 transition flex items-center gap-2 shadow-md">
+                    <svg id="refreshIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    <span id="refreshBtnText">抓取真實數據</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主內容區 -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- 資料來源狀態提示條 -->
+        <div id="dataSourceBanner" class="rounded-xl px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-emerald-950/60 border border-emerald-700/50 text-emerald-200 transition-all">
+            <div class="flex items-center gap-2.5">
+                <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                <span id="statusText">正在連線至 FinMind 公開金融資料庫獲取真實歷史股價...</span>
+            </div>
+            <span id="dataSourceTag" class="text-xs font-mono px-2.5 py-1 rounded-md bg-emerald-900/80 text-emerald-300 self-start sm:self-auto">
+                API: FinMind Real-Data
+            </span>
+        </div>
+
+        <!-- 關鍵指標摘要卡片 (KPI Cards) -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- 最新收盤價 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 text-sm font-medium">最新收盤價 (<span id="kpiCurrency">TWD</span>)</span>
+                    <span id="kpiDate" class="text-xs text-slate-500 bg-slate-900 px-2 py-1 rounded-md">--</span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-3">
+                    <span id="kpiClose" class="text-3xl font-bold text-white">--</span>
+                    <span id="priceChangeBadge" class="text-sm font-semibold px-2 py-0.5 rounded-lg">--</span>
+                </div>
+                <p class="mt-2 text-xs text-slate-400">區間最高: <span id="kpiHigh" class="text-slate-200 font-medium">--</span> | 最低: <span id="kpiLow" class="text-slate-200 font-medium">--</span></p>
+            </div>
+
+            <!-- 移動平均線 (MA5 / MA20) -->
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 text-sm font-medium">均線系統 (MA5 / MA20)</span>
+                    <span id="maSignalBadge" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-700 text-slate-300">計算中</span>
+                </div>
+                <div class="mt-3 space-y-1">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-amber-400 font-medium">MA5 (週線):</span>
+                        <span id="kpiMa5" class="font-bold text-white">--</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-sky-400 font-medium">MA20 (月線):</span>
+                        <span id="kpiMa20" class="font-bold text-white">--</span>
+                    </div>
+                </div>
+                <p id="maDesc" class="mt-2 text-xs text-slate-400">短中期均線排列狀態</p>
+            </div>
+
+            <!-- RSI (14) 相對強弱指標 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 text-sm font-medium">RSI (14日強弱指標)</span>
+                    <span id="rsiSignalBadge" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-700 text-slate-300">中性</span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-2">
+                    <span id="kpiRsi" class="text-3xl font-bold text-purple-400">--</span>
+                    <span class="text-xs text-slate-400">/ 100</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-1.5 mt-3">
+                    <div id="rsiProgressBar" class="bg-purple-500 h-1.5 rounded-full transition-all duration-500" style="width: 50%"></div>
+                </div>
+            </div>
+
+            <!-- 成交量與波動度 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+                <div class="flex justify-between items-start">
+                    <span class="text-slate-400 text-sm font-medium">最新成交量 (張)</span>
+                    <span class="text-xs text-indigo-400 bg-indigo-950/80 border border-indigo-800/50 px-2 py-1 rounded-md">量能觀察</span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-2">
+                    <span id="kpiVolume" class="text-2xl font-bold text-white">--</span>
+                </div>
+                <p class="mt-2 text-xs text-slate-400">20日均量: <span id="kpiAvgVol" class="text-slate-200 font-medium">--</span></p>
+            </div>
+        </section>
+
+        <!-- 主圖表區：K線圖 + 均線 + 成交量 -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-4 sm:p-6 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+                <div>
+                    <h2 id="chartTitle" class="text-lg font-bold text-white">2330 歷史走勢與技術指標圖</h2>
+                    <p class="text-xs text-slate-400">台股慣例配色：紅 K 代表收漲、綠 K 代表收跌（支援右上角工具列縮放平移）</p>
+                </div>
+                <div class="flex items-center gap-4 text-xs">
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span> MA5 週線</span>
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-400 inline-block"></span> MA20 月線</span>
+                </div>
+            </div>
+            
+            <!-- K 線主圖容器 -->
+            <div id="candlestickChart" class="w-full min-h-[360px]"></div>
+            
+            <!-- 成交量副圖容器 -->
+            <div class="border-t border-slate-700/70 pt-2 mt-2">
+                <p class="text-xs text-slate-400 mb-1 ml-2">每日成交量 (張)</p>
+                <div id="volumeChart" class="w-full min-h-[140px]"></div>
+            </div>
+        </section>
+
+        <!-- RSI 指標副圖 -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-4 sm:p-6 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-2">
+                <div>
+                    <h3 class="text-base font-bold text-white">RSI (14) 相對強弱指標走勢</h3>
+                    <p class="text-xs text-slate-400">虛線參考區間：70 以上為超買區（留意回檔），30 以下為超賣區（留意反彈）</p>
+                </div>
+            </div>
+            <div id="rsiChart" class="w-full min-h-[180px]"></div>
+        </section>
+
+        <!-- 近期歷史數據明細表與 CSV 匯出 -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-4 sm:p-6 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                <div>
+                    <h3 class="text-base font-bold text-white">最近 10 個交易日數據明細</h3>
+                    <p class="text-xs text-slate-400">包含每日開高低收與即時計算之技術指標數值</p>
+                </div>
+                <button id="exportCsvBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 self-start sm:self-auto shadow">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    匯出完整 CSV 報表
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left text-slate-300">
+                    <thead class="text-xs text-slate-400 uppercase bg-slate-900/80 border-b border-slate-700">
+                        <tr>
+                            <th class="px-4 py-3">日期</th>
+                            <th class="px-4 py-3 text-right">開盤價</th>
+                            <th class="px-4 py-3 text-right">最高價</th>
+                            <th class="px-4 py-3 text-right">最低價</th>
+                            <th class="px-4 py-3 text-right">收盤價</th>
+                            <th class="px-4 py-3 text-right">漲跌幅</th>
+                            <th class="px-4 py-3 text-right">MA5</th>
+                            <th class="px-4 py-3 text-right">MA20</th>
+                            <th class="px-4 py-3 text-right">RSI(14)</th>
+                            <th class="px-4 py-3 text-right">成交量(張)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody" class="divide-y divide-slate-700/60">
+                        <!-- 由 JS 動態填入 -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 底部提示通知框 (取代 alert) -->
+    <div id="toastNotification" class="fixed bottom-5 right-5 bg-slate-900 border border-indigo-500 text-white px-4 py-3 rounded-xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center gap-2 text-sm">
+        <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+        <span id="toastMessage">訊息提示</span>
+    </div>
+
+    <script>
+        // 全局狀態變數
+        let currentStockData = [];
+        let candleChartInstance = null;
+        let volumeChartInstance = null;
+        let rsiChartInstance = null;
+        let autoRefreshTimer = null;
+        let countdownSeconds = 60;
+
+        /**
+         * 透過 FinMind 公開 API 獲取真實台股歷史日 K 線數據
+         * @param {string} ticker - 台股代號 (例如 "2330", "0050")
+         * @param {number} targetDays - 需要顯示的交易日數量
+         */
+        async function fetchRealStockData(ticker, targetDays) {
+            // 多抓 45 個日曆天，確保計算 MA20 與 RSI(14) 時有足夠的前置資料
+            const calendarDays = Math.ceil(targetDays * 1.6) + 45;
+            const startDateObj = new Date();
+            startDateObj.setDate(startDateObj.getDate() - calendarDays);
+            const startDateStr = startDateObj.toISOString().split('T')[0];
+
+            const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(ticker)}&start_date=${startDateStr}`;
+            
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP 錯誤狀態碼: ${response.status}`);
+            }
+
+            const json = await response.json();
+            if (json.msg !== 'success' || !Array.isArray(json.data) || json.data.length === 0) {
+                throw new Error(json.msg || '查無此股票代號的歷史數據');
+            }
+
+            // 整理 FinMind 回傳格式 (Trading_Volume 單位為「股」，除以 1000 換算為「張」)
+            const rawData = json.data
+                .filter(item => item.close > 0 && item.open > 0)
+                .map(item => ({
+                    date: item.date,
+                    open: Number(item.open),
+                    high: Number(item.max),
+                    low: Number(item.min),
+                    close: Number(item.close),
+                    volume: Math.round(Number(item.Trading_Volume) / 1000)
+                }));
+
+            if (rawData.length < 15) {
+                throw new Error('歷史交易日筆數不足，無法完整計算技術指標');
+            }
+
+            // 計算技術指標並截取使用者指定的天數
+            return calculateIndicators(rawData).slice(-targetDays);
+        }
+
+        /**
+         * 備援機制：當網路中斷、輸入錯誤代號或 API 達到每小時免費上限時使用
+         */
+        function generateFallbackData(ticker, targetDays) {
+            const totalDays = targetDays + 30;
+            const rawData = [];
+            let price = 500;
+            const now = new Date();
+            let currentDate = new Date(now);
+            currentDate.setDate(currentDate.getDate() - Math.floor(totalDays * 1.45));
+
+            while (rawData.length < totalDays) {
+                const dayOfWeek = currentDate.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    const changePercent = (Math.random() - 0.48) * 0.035;
+                    const open = price * (1 + (Math.random() - 0.5) * 0.01);
+                    const close = open * (1 + changePercent);
+                    const high = Math.max(open, close) * (1 + Math.random() * 0.012);
+                    const low = Math.min(open, close) * (1 - Math.random() * 0.012);
+                    const volume = Math.floor(15000 + Math.random() * 35000);
+
+                    rawData.push({
+                        date: currentDate.toISOString().split('T')[0],
+                        open: Number(open.toFixed(2)),
+                        high: Number(high.toFixed(2)),
+                        low: Number(low.toFixed(2)),
+                        close: Number(close.toFixed(2)),
+                        volume: volume
+                    });
+                    price = close;
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            return calculateIndicators(rawData).slice(-targetDays);
+        }
+
+        /**
+         * 計算移動平均線 (MA5, MA20) 與 RSI (14) 指標
+         */
+        function calculateIndicators(data) {
+            for (let i = 0; i < data.length; i++) {
+                // 漲跌幅 (%)
+                if (i > 0) {
+                    const prevClose = data[i - 1].close;
+                    data[i].changePct = ((data[i].close - prevClose) / prevClose) * 100;
+                } else {
+                    data[i].changePct = 0;
+                }
+
+                // MA5 (5日均線)
+                if (i >= 4) {
+                    let sum5 = 0;
+                    for (let j = 0; j < 5; j++) sum5 += data[i - j].close;
+                    data[i].ma5 = Number((sum5 / 5).toFixed(2));
+                } else {
+                    data[i].ma5 = null;
+                }
+
+                // MA20 (20日均線)
+                if (i >= 19) {
+                    let sum20 = 0;
+                    for (let j = 0; j < 20; j++) sum20 += data[i - j].close;
+                    data[i].ma20 = Number((sum20 / 20).toFixed(2));
+                } else {
+                    data[i].ma20 = null;
+                }
+
+                // RSI (14日相對強弱指標)
+                if (i >= 14) {
+                    let gains = 0;
+                    let losses = 0;
+                    for (let j = 0; j < 14; j++) {
+                        const diff = data[i - j].close - data[i - j - 1].close;
+                        if (diff > 0) gains += diff;
+                        else losses -= diff;
+                    }
+                    const avgGain = gains / 14;
+                    const avgLoss = losses / 14;
+                    if (avgLoss === 0) {
+                        data[i].rsi = 100;
+                    } else {
+                        const rs = avgGain / avgLoss;
+                        data[i].rsi = Number((100 - (100 / (1 + rs))).toFixed(2));
+                    }
+                } else {
+                    data[i].rsi = null;
+                }
+            }
+            return data;
+        }
+
+        /**
+         * 更新上方狀態橫幅、KPI 卡片與明細表格
+         */
+        function updateDashboardUI(ticker, data, isRealData) {
+            const latest = data[data.length - 1];
+            const banner = document.getElementById('dataSourceBanner');
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            const dataSourceTag = document.getElementById('dataSourceTag');
+
+            // 1. 更新資料來源狀態列
+            if (isRealData) {
+                banner.className = 'rounded-xl px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-emerald-950/60 border border-emerald-700/50 text-emerald-200 transition-all';
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0';
+                statusText.textContent = `已成功載入台股 [${ticker}] 真實歷史日 K 線行情（資料區間：${data[0].date} 至 ${latest.date}）`;
+                dataSourceTag.className = 'text-xs font-mono px-2.5 py-1 rounded-md bg-emerald-900/80 text-emerald-300 self-start sm:self-auto';
+                dataSourceTag.textContent = '真實數據來源：FinMind API';
+            } else {
+                banner.className = 'rounded-xl px-4 py-3 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-amber-950/60 border border-amber-700/50 text-amber-200 transition-all';
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0';
+                statusText.textContent = `目前無法從 API 取得 [${ticker}] 真實數據（可能為無效代號或達到 API 流量限制），已自動切換為備援模擬數據。`;
+                dataSourceTag.className = 'text-xs font-mono px-2.5 py-1 rounded-md bg-amber-900/80 text-amber-300 self-start sm:self-auto';
+                dataSourceTag.textContent = '備援模式：模擬數據';
+            }
+
+            // 2. 更新價格與漲跌幅卡片 (台股：紅漲綠跌)
+            document.getElementById('kpiCurrency').textContent = 'TWD';
+            document.getElementById('kpiDate').textContent = latest.date;
+            document.getElementById('kpiClose').textContent = latest.close.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            const badge = document.getElementById('priceChangeBadge');
+            const pct = latest.changePct;
+            const sign = pct > 0 ? '+' : '';
+            badge.textContent = `${sign}${pct.toFixed(2)}%`;
+            if (pct > 0) {
+                badge.className = 'text-sm font-semibold px-2 py-0.5 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            } else if (pct < 0) {
+                badge.className = 'text-sm font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            } else {
+                badge.className = 'text-sm font-semibold px-2 py-0.5 rounded-lg bg-slate-700 text-slate-300';
+            }
+
+            const periodHigh = Math.max(...data.map(d => d.high));
+            const periodLow = Math.min(...data.map(d => d.low));
+            document.getElementById('kpiHigh').textContent = periodHigh.toFixed(2);
+            document.getElementById('kpiLow').textContent = periodLow.toFixed(2);
+
+            // 3. 更新均線狀態
+            document.getElementById('kpiMa5').textContent = latest.ma5 !== null ? latest.ma5.toFixed(2) : '--';
+            document.getElementById('kpiMa20').textContent = latest.ma20 !== null ? latest.ma20.toFixed(2) : '--';
+            const maBadge = document.getElementById('maSignalBadge');
+            const maDesc = document.getElementById('maDesc');
+
+            if (latest.ma5 && latest.ma20) {
+                if (latest.ma5 > latest.ma20) {
+                    maBadge.textContent = '多頭排列';
+                    maBadge.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30';
+                    maDesc.textContent = 'MA5 位於 MA20 之上，短期動能偏強';
+                } else {
+                    maBadge.textContent = '空頭排列';
+                    maBadge.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                    maDesc.textContent = 'MA5 位於 MA20 之下，短期趨勢偏弱';
+                }
+            }
+
+            // 4. 更新 RSI 狀態
+            const rsiVal = latest.rsi !== null ? latest.rsi : 50;
+            document.getElementById('kpiRsi').textContent = latest.rsi !== null ? latest.rsi.toFixed(1) : '--';
+            document.getElementById('rsiProgressBar').style.width = `${Math.min(100, Math.max(0, rsiVal))}%`;
+            const rsiBadge = document.getElementById('rsiSignalBadge');
+
+            if (rsiVal >= 70) {
+                rsiBadge.textContent = '超買警戒 (>70)';
+                rsiBadge.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            } else if (rsiVal <= 30) {
+                rsiBadge.textContent = '超賣區間 (<30)';
+                rsiBadge.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            } else {
+                rsiBadge.textContent = '中性區間';
+                rsiBadge.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30';
+            }
+
+            // 5. 更新成交量資訊
+            document.getElementById('kpiVolume').textContent = latest.volume.toLocaleString();
+            const recent20 = data.slice(-20);
+            const avgVol = Math.round(recent20.reduce((acc, cur) => acc + cur.volume, 0) / recent20.length);
+            document.getElementById('kpiAvgVol').textContent = `${avgVol.toLocaleString()} 張`;
+
+            // 6. 更新圖表標題
+            const selector = document.getElementById('stockSelector');
+            const labelText = selector.value === 'CUSTOM' ? `台股 ${ticker}` : selector.options[selector.selectedIndex].text;
+            document.getElementById('chartTitle').textContent = `${labelText} — 歷史走勢與技術指標圖`;
+
+            // 7. 填入最近 10 筆數據表格
+            const tbody = document.getElementById('dataTableBody');
+            tbody.innerHTML = '';
+            const recent10 = [...data].reverse().slice(0, 10);
+            recent10.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-700/40 transition';
+                const pctColor = row.changePct > 0 ? 'text-rose-400' : (row.changePct < 0 ? 'text-emerald-400' : 'text-slate-300');
+                const pctSign = row.changePct > 0 ? '+' : '';
+
+                tr.innerHTML = `
+                    <td class="px-4 py-3 font-medium text-white whitespace-nowrap">${row.date}</td>
+                    <td class="px-4 py-3 text-right">${row.open.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-right">${row.high.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-right">${row.low.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-right font-semibold text-white">${row.close.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-right font-medium ${pctColor}">${pctSign}${row.changePct.toFixed(2)}%</td>
+                    <td class="px-4 py-3 text-right text-amber-400">${row.ma5 !== null ? row.ma5.toFixed(2) : '-'}</td>
+                    <td class="px-4 py-3 text-right text-sky-400">${row.ma20 !== null ? row.ma20.toFixed(2) : '-'}</td>
+                    <td class="px-4 py-3 text-right text-purple-300">${row.rsi !== null ? row.rsi.toFixed(1) : '-'}</td>
+                    <td class="px-4 py-3 text-right text-slate-300">${row.volume.toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        /**
+         * 使用 ApexCharts 繪製 K 線圖、均線、成交量與 RSI 指標
+         */
+        function renderCharts(data) {
+            const dates = data.map(d => d.date);
+            const candleSeries = data.map(d => ({
+                x: d.date,
+                y: [d.open, d.high, d.low, d.close]
+            }));
+            const ma5Series = data.map(d => ({ x: d.date, y: d.ma5 }));
+            const ma20Series = data.map(d => ({ x: d.date, y: d.ma20 }));
+            const volumeSeries = data.map(d => ({
+                x: d.date,
+                y: d.volume,
+                fillColor: d.close >= d.open ? '#f43f5e' : '#10b981' // 紅漲綠跌
+            }));
+            const rsiSeries = data.map(d => ({ x: d.date, y: d.rsi }));
+
+            // 1. K 線與均線主圖設定
+            const candleOptions = {
+                series: [
+                    { name: 'K線價格', type: 'candlestick', data: candleSeries },
+                    { name: 'MA5 週線', type: 'line', data: ma5Series },
+                    { name: 'MA20 月線', type: 'line', data: ma20Series }
+                ],
+                chart: {
+                    type: 'line',
+                    height: 360,
+                    background: 'transparent',
+                    foreColor: '#94a3b8',
+                    toolbar: { show: true, tools: { download: false } },
+                    animations: { enabled: false }
+                },
+                colors: ['#f43f5e', '#fbbf24', '#38bdf8'],
+                stroke: {
+                    width: [1, 2, 2],
+                    curve: 'smooth'
+                },
+                plotOptions: {
+                    candlestick: {
+                        colors: {
+                            upward: '#f43f5e',   // 台股紅漲 (Rose 500)
+                            downward: '#10b981'  // 台股綠跌 (Emerald 500)
+                        },
+                        wick: { useFillColor: true }
+                    }
+                },
+                xaxis: {
+                    type: 'category',
+                    categories: dates,
+                    tickAmount: 10,
+                    labels: { style: { colors: '#94a3b8', fontSize: '11px' } },
+                    axisBorder: { color: '#334155' },
+                    axisTicks: { color: '#334155' }
+                },
+                yaxis: {
+                    tooltip: { enabled: true },
+                    labels: {
+                        style: { colors: '#94a3b8' },
+                        formatter: (val) => val ? val.toFixed(1) : ''
+                    }
+                },
+                grid: {
+                    borderColor: '#334155',
+                    strokeDashArray: 4
+                },
+                legend: { show: false },
+                tooltip: {
+                    theme: 'dark',
+                    shared: true
+                }
+            };
+
+            // 2. 成交量副圖設定
+            const volumeOptions = {
+                series: [{ name: '成交量(張)', data: volumeSeries }],
+                chart: {
+                    type: 'bar',
+                    height: 140,
+                    background: 'transparent',
+                    foreColor: '#94a3b8',
+                    toolbar: { show: false },
+                    animations: { enabled: false }
+                },
+                dataLabels: { enabled: false },
+                xaxis: {
+                    type: 'category',
+                    categories: dates,
+                    labels: { show: false },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false }
+                },
+                yaxis: {
+                    labels: {
+                        style: { colors: '#94a3b8', fontSize: '10px' },
+                        formatter: (val) => val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val
+                    }
+                },
+                grid: {
+                    borderColor: '#334155',
+                    strokeDashArray: 4
+                },
+                tooltip: { theme: 'dark' }
+            };
+
+            // 3. RSI (14) 指標圖設定
+            const rsiOptions = {
+                series: [{ name: 'RSI (14)', data: rsiSeries }],
+                chart: {
+                    type: 'line',
+                    height: 180,
+                    background: 'transparent',
+                    foreColor: '#94a3b8',
+                    toolbar: { show: false },
+                    animations: { enabled: false }
+                },
+                colors: ['#c084fc'],
+                stroke: { width: 2, curve: 'smooth' },
+                annotations: {
+                    yaxis: [
+                        { y: 70, borderColor: '#f43f5e', strokeDashArray: 4, label: { text: '超買 70', style: { color: '#fff', background: '#f43f5e', fontSize: '10px' } } },
+                        { y: 30, borderColor: '#10b981', strokeDashArray: 4, label: { text: '超賣 30', style: { color: '#fff', background: '#10b981', fontSize: '10px' } } }
+                    ]
+                },
+                xaxis: {
+                    type: 'category',
+                    categories: dates,
+                    tickAmount: 10,
+                    labels: { style: { colors: '#94a3b8', fontSize: '11px' } },
+                    axisBorder: { color: '#334155' }
+                },
+                yaxis: {
+                    min: 0,
+                    max: 100,
+                    tickAmount: 4,
+                    labels: { style: { colors: '#94a3b8' } }
+                },
+                grid: {
+                    borderColor: '#334155',
+                    strokeDashArray: 4
+                },
+                tooltip: { theme: 'dark' }
+            };
+
+            // 清除舊圖表實例並重新渲染
+            if (candleChartInstance) candleChartInstance.destroy();
+            if (volumeChartInstance) volumeChartInstance.destroy();
+            if (rsiChartInstance) rsiChartInstance.destroy();
+
+            candleChartInstance = new ApexCharts(document.querySelector('#candlestickChart'), candleOptions);
+            volumeChartInstance = new ApexCharts(document.querySelector('#volumeChart'), volumeOptions);
+            rsiChartInstance = new ApexCharts(document.querySelector('#rsiChart'), rsiOptions);
+
+            candleChartInstance.render();
+            volumeChartInstance.render();
+            rsiChartInstance.render();
+        }
+
+        // 顯示右下角提示訊息
+        function showToast(msg) {
+            const toast = document.getElementById('toastNotification');
+            document.getElementById('toastMessage').textContent = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // 取得目前選擇或輸入的股票代號
+        function getActiveTicker() {
+            const selectorVal = document.getElementById('stockSelector').value;
+            if (selectorVal === 'CUSTOM') {
+                const customVal = document.getElementById('customTickerInput').value.trim().toUpperCase();
+                return customVal || '2330';
+            }
+            return selectorVal;
+        }
+
+        // 執行分析主流程
+        async function runAnalysis(isSilent = false) {
+            const ticker = getActiveTicker();
+            const days = parseInt(document.getElementById('daysSelector').value, 10);
+            const refreshBtn = document.getElementById('refreshBtn');
+            const refreshIcon = document.getElementById('refreshIcon');
+            const refreshBtnText = document.getElementById('refreshBtnText');
+
+            // 進入載入狀態
+            refreshBtn.disabled = true;
+            refreshIcon.classList.add('animate-spin');
+            refreshBtnText.textContent = '抓取中...';
+
+            try {
+                // 嘗試抓取真實台股數據
+                currentStockData = await fetchRealStockData(ticker, days);
+                updateDashboardUI(ticker, currentStockData, true);
+                renderCharts(currentStockData);
+                if (!isSilent) showToast(`成功載入 ${ticker} 真實歷史股價數據！`);
+            } catch (error) {
+                console.warn('真實 API 抓取失敗，啟用備援模擬數據:', error);
+                currentStockData = generateFallbackData(ticker, days);
+                updateDashboardUI(ticker, currentStockData, false);
+                renderCharts(currentStockData);
+                if (!isSilent) showToast(`API 無法取得 ${ticker}，已切換為備援模擬數據`);
+            } finally {
+                refreshBtn.disabled = false;
+                refreshIcon.classList.remove('animate-spin');
+                refreshBtnText.textContent = '抓取真實數據';
+                // 重置自動更新倒數秒數
+                countdownSeconds = 60;
+            }
+        }
+
+        // 自動更新計時器控制
+        function toggleAutoRefresh(enabled) {
+            const countdownEl = document.getElementById('countdownText');
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+            }
+
+            if (enabled) {
+                countdownSeconds = 60;
+                countdownEl.textContent = `${countdownSeconds}s`;
+                countdownEl.classList.replace('text-slate-500', 'text-emerald-400');
+                showToast('已開啟自動更新（每 60 秒自動同步最新數據）');
+
+                autoRefreshTimer = setInterval(() => {
+                    countdownSeconds--;
+                    if (countdownSeconds <= 0) {
+                        countdownEl.textContent = '更新中';
+                        runAnalysis(true); // 背景靜默更新
+                    } else {
+                        countdownEl.textContent = `${countdownSeconds}s`;
+                    }
+                }, 1000);
+            } else {
+                countdownEl.textContent = '關閉';
+                countdownEl.classList.replace('text-emerald-400', 'text-slate-500');
+                showToast('已關閉自動更新');
+            }
+        }
+
+        // 匯出 CSV 功能
+        document.getElementById('exportCsvBtn').addEventListener('click', () => {
+            if (!currentStockData.length) return;
+            const ticker = getActiveTicker();
+            const headers = ['Date,Open,High,Low,Close,ChangePct,MA5,MA20,RSI14,Volume_Lots'];
+            const rows = currentStockData.map(d =>
+                `${d.date},${d.open},${d.high},${d.low},${d.close},${d.changePct.toFixed(2)},${d.ma5 ?? ''},${d.ma20 ?? ''},${d.rsi ?? ''},${d.volume}`
+            );
+            const csvContent = '\uFEFF' + [headers, ...rows].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${ticker}_stock_analysis.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(`已成功匯出 ${ticker} 分析報表！`);
+        });
+
+        // 監聽股票下拉選單切換
+        document.getElementById('stockSelector').addEventListener('change', (e) => {
+            const customInput = document.getElementById('customTickerInput');
+            if (e.target.value === 'CUSTOM') {
+                customInput.classList.remove('hidden');
+                customInput.focus();
+            } else {
+                customInput.classList.add('hidden');
+                runAnalysis(false);
+            }
+        });
+
+        // 自訂輸入框按 Enter 觸發查詢
+        document.getElementById('customTickerInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                runAnalysis(false);
+            }
+        });
+
+        // 綁定其他控制元件事件
+        document.getElementById('daysSelector').addEventListener('change', () => runAnalysis(false));
+        document.getElementById('refreshBtn').addEventListener('click', () => runAnalysis(false));
+        document.getElementById('autoRefreshToggle').addEventListener('change', (e) => {
+            toggleAutoRefresh(e.target.checked);
+        });
+
+        // 網頁載入完成後啟動
+        window.addEventListener('DOMContentLoaded', () => runAnalysis(false));
+    </script>
+</body>
 </html>
