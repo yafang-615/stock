@@ -58,4 +58,4 @@ stock/
 
 GitHub Actions 會在 GitHub `main` 有新提交時執行同步，並約每 5 分鐘檢查 Hugging Face `main` 是否有新提交；也可在 GitHub 的 **Actions** 頁面手動執行。同步只會在一方是另一方祖先時 fast-forward，不會強制推送。若兩邊分岔，或 Hugging Face 端的變更修改 `.github/workflows/`，工作流程會停止，需人工檢視與合併。
 
-啟用同步前，請在 GitHub 儲存庫的 **Settings → Secrets and variables → Actions** 建立 `HF_TOKEN`，其權限需包含此 Hugging Face Space 的寫入權限。未設定此 secret 時，同步工作流程會明確失敗；請勿將 token 寫入程式碼或提交到儲存庫。
+啟用同步前，請在 GitHub 儲存庫的 **Settings → Secrets and variables → Actions** 建立 `YOUR_STCOK_KEY`，其權限需包含此 Hugging Face Space 的寫入權限。未設定此 secret 時，同步工作流程會明確失敗；請勿將 token 寫入程式碼或提交到儲存庫。

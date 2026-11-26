@@ -27,14 +27,14 @@ jobs:
 
       - name: Synchronize main branches
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_TOKEN: ${{ secrets.YOUR_STCOK_KEY }}
           HF_REPOSITORY: https://huggingface.co/spaces/guoyafang615/stockai
         shell: bash
         run: |
           set -euo pipefail
 
           if [[ -z "$HF_TOKEN" ]]; then
-            echo "::error::Configure the HF_TOKEN Actions secret with write access to the Hugging Face Space."
+            echo "::error::Configure the YOUR_STCOK_KEY Actions secret with write access to the Hugging Face Space."
             exit 1
           fi
 
