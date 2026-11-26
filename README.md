@@ -33,3 +33,12 @@ Check out the configuration reference at https://huggingface.co/docs/hub/spaces-
 如果 API 無法取得資料（例如網路問題、無效代號或服務限制），儀表板會切換到模擬資料，並在頁面狀態列標示「備援模式：模擬數據」。模擬數據不代表真實行情，請勿用於投資決策。
 
 MA 與 RSI 是用於觀察歷史價格趨勢的技術指標，不構成投資建議。
+
+## GitHub 與 Hugging Face 同步
+
+- GitHub：[`yafang-615/stock`](https://github.com/yafang-615/stock)
+- Hugging Face Space：[`guoyafang615/stockai`](https://huggingface.co/spaces/guoyafang615/stockai)
+
+GitHub Actions 會在 GitHub `main` 有新提交時執行同步，並約每 5 分鐘檢查 Hugging Face `main` 是否有新提交；也可在 GitHub 的 **Actions** 頁面手動執行。同步只會在一方是另一方祖先時 fast-forward，不會強制推送。若兩邊分岔，或 Hugging Face 端的變更修改 `.github/workflows/`，工作流程會停止，需人工檢視與合併。
+
+啟用同步前，請在 GitHub 儲存庫的 **Settings → Secrets and variables → Actions** 建立 `HF_TOKEN`，其權限需包含此 Hugging Face Space 的寫入權限。未設定此 secret 時，同步工作流程會明確失敗；請勿將 token 寫入程式碼或提交到儲存庫。
