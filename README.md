@@ -34,6 +34,23 @@ Check out the configuration reference at https://huggingface.co/docs/hub/spaces-
 
 MA 與 RSI 是用於觀察歷史價格趨勢的技術指標，不構成投資建議。
 
+## 資料夾結構
+
+```text
+stock/
+├── .github/
+│   └── workflows/
+│       └── sync-github-huggingface.yml
+├── .gitattributes
+├── README.md
+├── index.html
+└── style.css
+```
+
+- `index.html`：儀表板頁面與主要程式邏輯。
+- `.github/workflows/`：GitHub Actions 工作流程設定。
+- `README.md`：系統介紹、使用方式與同步設定說明。
+
 ## GitHub 與 Hugging Face 同步
 
 - GitHub：[`yafang-615/stock`](https://github.com/yafang-615/stock)
